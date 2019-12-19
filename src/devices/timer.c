@@ -7,6 +7,7 @@
 #include "threads/interrupt.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
+#include "lib/kernel/list.h"
   
 /* See [8254] for hardware details of the 8254 timer chip. */
 
@@ -17,8 +18,17 @@
 #error TIMER_FREQ <= 1000 recommended
 #endif
 
+struct sleeping_thread{
+  struct list_elem elem;//required by the list.h
+  struct thread *thread;//record the blocked thread serve as the argument of thread_unblock()
+  int64_t ticks_to_wake;//use in timer_interrupt to wake the sleeping thread at the right time 
+};// use with sleeping_list to construct a list to contain the thread in block list, this the recomand method in list.h
+
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
+struct semaphore lambert_sleep_function;// use to semaphore the sleeping_list
+struct list sleeping_list;//see sleeping_thread
+
 
 /* Number of loops per timer tick.
    Initialized by timer_calibrate(). */
@@ -37,6 +47,9 @@ timer_init (void)
 {
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
+  //lambert: initialize the variable for sleep function
+  list_init(&sleeping_list);
+  sema_init(&lambert_sleep_function,1u);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -89,11 +102,36 @@ timer_elapsed (int64_t then)
 void
 timer_sleep (int64_t ticks) 
 {
+  if(ticks<=0){
+    return;
+  }
   int64_t start = timer_ticks ();
-
-  ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks) 
-    thread_yield ();
+  int64_t ticks_to_wake=start+ticks;
+  struct sleeping_thread t;
+  t.thread=thread_current();
+  t.ticks_to_wake=ticks_to_wake;
+  sema_down(&lambert_sleep_function);
+  bool insert=false;
+  if(list_empty(&sleeping_list)==true){
+    list_push_front(&sleeping_list,&(t.elem));
+  }else{
+    struct list_elem *e;
+    for(e=list_begin(&sleeping_list);e!=list_end(&sleeping_list);e=list_next(e)){
+      struct sleeping_thread *f=list_entry(e,struct sleeping_thread,elem);
+      if(ticks_to_wake<=f->ticks_to_wake){
+	list_insert(e,&(t.elem));
+	insert=true;
+	break;
+      }
+    }
+    if(insert==false){
+      list_push_back(&sleeping_list,&(t.elem));
+    }
+  }
+  sema_up(&lambert_sleep_function);
+  enum intr_level oldlevel=intr_disable();
+  thread_block();
+  intr_set_level(oldlevel);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -171,6 +209,10 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
+  while((list_empty(&sleeping_list)==false)&&(ticks>=list_entry(list_begin(&sleeping_list),struct sleeping_thread,elem)->ticks_to_wake)){
+    thread_unblock(list_entry(list_begin(&sleeping_list),struct sleeping_thread,elem)->thread);
+    list_pop_front(&sleeping_list);
+  }
   thread_tick ();
 }
 

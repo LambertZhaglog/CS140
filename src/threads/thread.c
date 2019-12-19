@@ -133,7 +133,7 @@ thread_tick (void)
 #endif
   else
     kernel_ticks++;
-
+ 
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
     intr_yield_on_return ();
@@ -208,7 +208,7 @@ thread_create (const char *name, int priority,
    again until awoken by thread_unblock().
 
    This function must be called with interrupts turned off.  It
-   is usually a better idea to use one of the synchronization
+   is usually a better idea to use one of the` synchronization
    primitives in synch.h. */
 void
 thread_block (void) 
