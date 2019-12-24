@@ -26,8 +26,10 @@ struct sleeping_thread{
 
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
-struct semaphore lambert_sleep_function;// use to semaphore the sleeping_list
+
 struct list sleeping_list;//see sleeping_thread
+
+struct sleeping_thread fake_sleeping_thread;//use to simplify the code complexity
 
 
 /* Number of loops per timer tick.
@@ -49,7 +51,9 @@ timer_init (void)
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
   //lambert: initialize the variable for sleep function
   list_init(&sleeping_list);
-  sema_init(&lambert_sleep_function,1u);
+  fake_sleeping_thread.thread=NULL;
+  fake_sleeping_thread.ticks_to_wake=INT64_MAX;
+  list_push_back(&sleeping_list,&fake_sleeping_thread.elem);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -110,26 +114,18 @@ timer_sleep (int64_t ticks)
   struct sleeping_thread t;
   t.thread=thread_current();
   t.ticks_to_wake=ticks_to_wake;
-  sema_down(&lambert_sleep_function);
-  bool insert=false;
-  if(list_empty(&sleeping_list)==true){
-    list_push_front(&sleeping_list,&(t.elem));
-  }else{
-    struct list_elem *e;
-    for(e=list_begin(&sleeping_list);e!=list_end(&sleeping_list);e=list_next(e)){
-      struct sleeping_thread *f=list_entry(e,struct sleeping_thread,elem);
-      if(ticks_to_wake<=f->ticks_to_wake){
-	list_insert(e,&(t.elem));
-	insert=true;
-	break;
-      }
-    }
-    if(insert==false){
-      list_push_back(&sleeping_list,&(t.elem));
+  
+  enum intr_level oldlevel=intr_disable();
+
+  //add the new sleeping thread to sleeping thread list, and keep list in order
+  for(struct list_elem *e=list_begin(&sleeping_list);e!=list_end(&sleeping_list);e=list_next(e)){
+    struct sleeping_thread *f=list_entry(e,struct sleeping_thread, elem);
+    if(ticks_to_wake<=f->ticks_to_wake){
+      list_insert(e,&t.elem);
+      break;
     }
   }
-  sema_up(&lambert_sleep_function);
-  enum intr_level oldlevel=intr_disable();
+  
   thread_block();
   intr_set_level(oldlevel);
 }
@@ -209,7 +205,7 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
-  while((list_empty(&sleeping_list)==false)&&(ticks>=list_entry(list_begin(&sleeping_list),struct sleeping_thread,elem)->ticks_to_wake)){
+  while(ticks>=list_entry(list_begin(&sleeping_list),struct sleeping_thread,elem)->ticks_to_wake){
     thread_unblock(list_entry(list_begin(&sleeping_list),struct sleeping_thread,elem)->thread);
     list_pop_front(&sleeping_list);
   }
