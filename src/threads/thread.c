@@ -201,6 +201,9 @@ thread_create (const char *name, int priority,
   /* Add to run queue. */
   thread_unblock (t);
 
+  /* implement the priority schedule's create case pre-emption*/
+  thread_yield();
+
   return tid;
 }
 
@@ -305,12 +308,15 @@ thread_yield (void)
   enum intr_level old_level;
   
   ASSERT (!intr_context ());
-
   old_level = intr_disable ();
-  if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
-  cur->status = THREAD_READY;
-  schedule ();
+  if(list_empty(&ready_list)==false
+     &&get_highest_effective_priority_thread(&ready_list)->effective_priority>=
+     cur->effective_priority){
+    if (cur != idle_thread) 
+      list_push_back (&ready_list, &cur->elem);
+    cur->status = THREAD_READY;
+    schedule ();
+  }
   intr_set_level (old_level);
 }
 
@@ -335,14 +341,18 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
-  thread_current ()->priority = new_priority;
+  struct thread *cur=thread_current();
+  cur->priority = new_priority;
+  int donate_priority=get_donate_priority(cur);
+  cur->effective_priority=new_priority>donate_priority?new_priority:donate_priority;
+  thread_yield();
 }
 
 /* Returns the current thread's priority. */
 int
 thread_get_priority (void) 
 {
-  return thread_current ()->priority;
+  return thread_current ()->effective_priority;
 }
 
 /* Sets the current thread's nice value to NICE. */
@@ -462,6 +472,9 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  t->effective_priority=priority;
+  list_init(&t->locks_holding);
+  t->lock_waiting=NULL;
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();
@@ -493,7 +506,7 @@ next_thread_to_run (void)
   if (list_empty (&ready_list))
     return idle_thread;
   else
-    return list_entry (list_pop_front (&ready_list), struct thread, elem);
+    return pop_highest_effective_priority_thread(&ready_list);
 }
 
 /* Completes a thread switch by activating the new thread's page
@@ -582,3 +595,55 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+
+/* 
+ * the parameter `list` should not be empty
+ * the list_elem must be struct thread's elem member
+ * note: this function just return the highest_effective_priority_thread in list,
+ *       but not pop it from list,it's caller's issue
+*/
+
+struct thread *get_highest_effective_priority_thread(struct list *list){
+  ASSERT(!list_empty(list));
+  int max=-1;
+  struct thread *result=NULL;
+  for(struct list_elem *e=list_begin(list);e!=list_end(list);e=list_next(e)){
+    struct thread *f=list_entry(e,struct thread, elem);
+    if(f->effective_priority>max){
+      max=f->effective_priority;
+      result=f;
+    }
+  }
+  ASSERT(is_thread(result));
+  return result;
+}
+/*
+ * a wrapper for function `get_highest_effective_priority`
+ * pop it from list also
+ */
+struct thread *pop_highest_effective_priority_thread(struct list *list){
+  ASSERT(list_empty(list)==false);
+  struct thread *result=get_highest_effective_priority_thread(list);
+  list_remove(&result->elem);
+  return result;
+}
+
+/*
+ * struct thread has a member called locks_holding 
+ * every lock has its own semaphore, the semaphore has its own semaphore priority
+ * we define the lock priority to be its semaphore priority
+ * the max value of all the lock priotity is the donate priority
+ */
+int get_donate_priority(struct thread *t){
+  int val=0;
+  int tmp;
+  struct list *locks=&t->locks_holding;
+  for(struct list_elem *e=list_begin(locks);e!=list_end(locks);e=list_next(e)){
+    struct lock *f=list_entry(e,struct lock,elem);
+    tmp=get_sema_priority(&f->semaphore);
+    if(val<tmp){
+      val=tmp;
+    }
+  }
+  return val;
+}

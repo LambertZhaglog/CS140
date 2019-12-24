@@ -336,3 +336,16 @@ cond_broadcast (struct condition *cond, struct lock *lock)
   while (!list_empty (&cond->waiters))
     cond_signal (cond, lock);
 }
+/*
+ * struct semaphore has a member called waiter whose type is thread
+ * every thread has its own effective_priority
+ * we define the semaphore priority is the max value of all its waiters' effective_priority
+ */
+int get_sema_priority(struct semaphore *sema){
+  ASSERT(sema!=NULL);
+  int val=0;
+  if(list_empty(&sema->waiters)==false){
+    val=get_highest_effective_priority_thread(&sema->waiters)->effective_priority;
+  }
+  return val;    
+}
