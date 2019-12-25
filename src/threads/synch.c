@@ -32,6 +32,7 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+extern bool thread_mlfqs;//lambert added
 void donate_priority(struct lock *tar,int val);
 /*
  * donate the val to struct lock *tar
@@ -218,7 +219,8 @@ lock_acquire (struct lock *lock)
   struct thread *cur=thread_current();
   while(sema->value==0){
     cur->lock_waiting=lock;
-    donate_priority(lock,cur->effective_priority);
+    if(thread_mlfqs==false)
+      donate_priority(lock,cur->effective_priority);
     list_push_back(&sema->waiters,&cur->elem);
     thread_block();
     cur->lock_waiting=NULL;
@@ -274,8 +276,10 @@ lock_release (struct lock *lock)
   struct thread *cur=thread_current();  
   lock->holder = NULL;
   list_remove(&lock->elem);
-  int donate=get_donate_priority(cur);
-  cur->effective_priority=cur->priority>donate?cur->priority:donate;
+  if(thread_mlfqs==false){
+    int donate=get_donate_priority(cur);
+    cur->effective_priority=cur->priority>donate?cur->priority:donate;
+  }
   if (!list_empty (&sema->waiters))
     thread_unblock(pop_highest_effective_priority_thread(&sema->waiters));
   sema->value++;

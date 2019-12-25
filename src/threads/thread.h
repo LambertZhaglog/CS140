@@ -17,6 +17,7 @@ enum thread_status
 /* Thread identifier type.
    You can redefine this to whatever type you like. */
 typedef int tid_t;
+typedef int32_t fp_t;
 #define TID_ERROR ((tid_t) -1)          /* Error value for tid_t. */
 
 /* Thread priorities. */
@@ -89,6 +90,9 @@ struct thread
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
     int effective_priority;//the priority after priority donation
+                   // the effective_priority also use as the multilevel feedback queue schedule
+    fp_t recent_cpu;
+    int nice;
     struct list_elem allelem;           /* List element for all threads list. */
 
     /* Shared between thread.c and synch.c. */
@@ -143,5 +147,37 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+/* copy from the non-exist file fixed-point.h */
+
+/* This represents 14 bits of sub-integer precision */
+#define FP_PRECISION 16384
+
+
+static inline fp_t int2fp(int32_t num){
+  return num*FP_PRECISION;
+}
+
+static inline int32_t fp2int(fp_t fp){
+  return fp/FP_PRECISION;
+}
+
+static inline fp_t fpadd(fp_t a,fp_t b){
+  return a+b;
+}
+
+static inline fp_t fpsub(fp_t a,fp_t b){
+  return a-b;
+}
+
+static inline fp_t fpmul(fp_t a,fp_t b){
+  int64_t product=((int64_t)a)*b/FP_PRECISION;
+  return product;
+}
+
+static inline fp_t fpdiv(fp_t a,fp_t b){
+  int64_t quotient=((int64_t)a)*FP_PRECISION/b;
+  return quotient;
+}
 
 #endif /* threads/thread.h */
