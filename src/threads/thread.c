@@ -392,8 +392,10 @@ thread_set_priority (int new_priority)
   cur->priority = new_priority;
   if(thread_mlfqs==true)
     return;
+  enum intr_level old_level=intr_disable();
   int donate_priority=get_donate_priority(cur);
   cur->effective_priority=new_priority>donate_priority?new_priority:donate_priority;
+  intr_set_level(old_level);
   thread_yield();
 }
 

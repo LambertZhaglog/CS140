@@ -30,21 +30,49 @@ FirstName LastName <email@domain.example>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+struct sleeping_thread{
+  struct list_elem elem;//required by the list.h
+  struct thread *thread;//record the blocked thread serve as the argument of thread_unblock()
+  int64_t ticks_to_wake;//use in timer_interrupt to wake the sleeping thread at the right time 
+};// use with sleeping_list to construct a list to contain the thread in block list, this the recomand method in list.h
+
+
+struct list sleeping_list;//see sleeping_thread, it is sorted according to the ticks_to_wake
+
+struct sleeping_thread fake_sleeping_thread;//use to simplify the code complexity
+
+static int64_t next_wake_tick; // a trick to minimize the amout of time spent in the timer interrupt handler, it record the tick of next waken up thread
+
 ---- ALGORITHMS ----
 
 >> A2: Briefly describe what happens in a call to timer_sleep(),
 >> including the effects of the timer interrupt handler.
 
+when a thread call timer_sleep(), he will first record the sleeping information in
+struct sleeping_thread, then add it to proper position in sleeping_list
+
+every time a timer interrupt occur, the handler check the sleeping_list and wake up threads those
+should get up
+
 >> A3: What steps are taken to minimize the amount of time spent in
 >> the timer interrupt handler?
+
+I use a fake thread to emit the overhead of check list_empty(&sleeping_thread)
+and use a global variable to minimize the time of check next waken up thread's ticks_to_wake
 
 ---- SYNCHRONIZATION ----
 
 >> A4: How are race conditions avoided when multiple threads call
 >> timer_sleep() simultaneously?
 
+when we add a sleeping thread to sleeping_list, we close the interrupt first that only one thread
+can modify the sleeping_list one time.
+
 >> A5: How are race conditions avoided when a timer interrupt occurs
 >> during a call to timer_sleep()?
+
+both timer_sleep and timer interrupt handler modify the sleeping_list, but they all close interrupt
+first before their operation
 
 ---- RATIONALE ----
 
@@ -59,27 +87,52 @@ FirstName LastName <email@domain.example>
 >> B1: Copy here the declaration of each new or changed `struct' or
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
+in struct thread add the follow members:
+    struct list locks_holding;//a list of locks this thread hold
+    struct lock *lock_waiting;//the lock the thread blocked by
+    int effective_priority;//the priority after priority donation
+                   // the effective_priority also use as the multilevel feedback queue schedule
+in struct lock add the follow member:
+    struct list_elem elem;//used to construct the locks_holder list in thread.h
+
 
 >> B2: Explain the data structure used to track priority donation.
 >> Use ASCII art to diagram a nested donation.  (Alternately, submit a
 >> .png file.)
+use the locks_holding, lock_waiting to construct a lock_acquire_block tree
 
 ---- ALGORITHMS ----
 
 >> B3: How do you ensure that the highest priority thread waiting for
 >> a lock, semaphore, or condition variable wakes up first?
+before wake up thread, I fisrt search the highest
+struct thread *get_highest_effective_priority_thread(struct list *list);
+struct thread *pop_highest_effective_priority_thread(struct list *list);
+
 
 >> B4: Describe the sequence of events when a call to lock_acquire()
 >> causes a priority donation.  How is nested donation handled?
+I reimplement the lock_acquire function, not use the sema_down function.
+the core donate handle as follows:
+  while(sema->value==0){
+    cur->lock_waiting=lock;
+    donate_priority(lock,cur->effective_priority);
+    list_push_back(&sema->waiters,&cur->elem);
+    thread_block();
+    cur->lock_waiting=NULL;
+  }
+where the function donate_priority is a recursive function which traverse the lock_acquire_block tree
 
 >> B5: Describe the sequence of events when lock_release() is called
 >> on a lock that a higher-priority thread is waiting for.
+first wake up the higheest-priority thread, then thread_yield()
 
 ---- SYNCHRONIZATION ----
 
 >> B6: Describe a potential race in thread_set_priority() and explain
 >> how your implementation avoids it.  Can you use a lock to avoid
 >> this race?
+close the interrupt
 
 ---- RATIONALE ----
 
@@ -94,6 +147,17 @@ FirstName LastName <email@domain.example>
 >> C1: Copy here the declaration of each new or changed `struct' or
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
+
+typedef int32_t fp_t;
+
+in struct thread add follow members:
+    int effective_priority;//the priority after priority donation
+                   // the effective_priority also use as the multilevel feedback queue schedule
+    fp_t recent_cpu;
+    int nice;
+
+fp_t load_avg;
+
 
 ---- ALGORITHMS ----
 

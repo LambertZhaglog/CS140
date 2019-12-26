@@ -27,10 +27,11 @@ struct sleeping_thread{
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
 
-struct list sleeping_list;//see sleeping_thread
+struct list sleeping_list;//see sleeping_thread, it is sorted according to the ticks_to_wake
 
 struct sleeping_thread fake_sleeping_thread;//use to simplify the code complexity
 
+static int64_t next_wake_tick; // a trick to minimize the amout of time spent in the timer interrupt handler, it record the tick of next waken up thread
 
 /* Number of loops per timer tick.
    Initialized by timer_calibrate(). */
@@ -53,6 +54,7 @@ timer_init (void)
   list_init(&sleeping_list);
   fake_sleeping_thread.thread=NULL;
   fake_sleeping_thread.ticks_to_wake=INT64_MAX;
+  next_wake_tick=INT64_MAX;
   list_push_back(&sleeping_list,&fake_sleeping_thread.elem);
 }
 
@@ -125,6 +127,7 @@ timer_sleep (int64_t ticks)
       break;
     }
   }
+  next_wake_tick=list_entry(list_begin(&sleeping_list),struct sleeping_thread,elem)->ticks_to_wake;
   
   thread_block();
   intr_set_level(oldlevel);
@@ -205,9 +208,10 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
-  while(ticks>=list_entry(list_begin(&sleeping_list),struct sleeping_thread,elem)->ticks_to_wake){
+  while(ticks>=next_wake_tick){
     thread_unblock(list_entry(list_begin(&sleeping_list),struct sleeping_thread,elem)->thread);
     list_pop_front(&sleeping_list);
+    next_wake_tick=list_entry(list_begin(&sleeping_list),struct sleeping_thread,elem)->ticks_to_wake;
   }
   thread_tick ();
 }
