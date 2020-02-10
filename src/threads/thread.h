@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "synch.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -103,6 +104,13 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
+    struct list sons; //use for exit/wait synch
+    struct list_elem as_son; //use for exit/wait synch
+    int exit_status; //record process exit status, use for exec too
+    struct semaphore sema_wait; //use for exit/wait synch, use for exec too
+    struct semaphore sema_exit; //use for exit/wait synch, use for exec too
+
+    struct list files;//use for fd2file
 #endif
 
     /* Owned by thread.c. */
@@ -132,6 +140,7 @@ const char *thread_name (void);
 
 void thread_exit (void) NO_RETURN;
 void thread_yield (void);
+struct thread *find_thread(tid_t tid);
 
 /* Performs some operation on thread t, given auxiliary data AUX. */
 typedef void thread_action_func (struct thread *t, void *aux);

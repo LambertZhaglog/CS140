@@ -227,6 +227,7 @@ thread_create (const char *name, int priority,
   sf->eip = switch_entry;
   sf->ebp = 0;
 
+  
   /* Add to run queue. */
   thread_unblock (t);
 
@@ -530,6 +531,15 @@ init_thread (struct thread *t, const char *name, int priority)
   t->lock_waiting=NULL;
   t->magic = THREAD_MAGIC;
 
+#ifdef USERPROG 
+  //initialize the new member of struct thread
+  list_init(&t->sons);
+  t->exit_status=0xf0f0f0f0;//for debug purpose
+  sema_init(&t->sema_wait,0);
+  sema_init(&t->sema_exit,0);
+  list_init(&t->files);
+#endif
+  
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
   intr_set_level (old_level);
@@ -711,3 +721,16 @@ void calculate_mlfqs_priority(struct thread *t){
   tmp=(tmp<PRI_MIN?PRI_MIN:tmp);
   t->effective_priority=tmp;
 }
+
+struct thread *find_thread(tid_t tid){
+  struct thread *result=NULL;
+  for(struct list_elem *e=list_begin(&all_list);e!=list_end(&all_list);e=list_next(e)){
+    struct thread *f=list_entry(e,struct thread, allelem);
+    if(f->tid==tid){
+      result=f;
+      break;
+    }
+  }
+  return result;
+}
+  

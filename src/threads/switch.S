@@ -14,6 +14,7 @@
 
 .globl switch_threads
 .func switch_threads
+
 switch_threads:
 	# Save caller's register state.
 	#

@@ -418,6 +418,7 @@ intr_dump_frame (const struct intr_frame *f)
      [IA32-v3a] 5.14 "Interrupt 14--Page Fault Exception
      (#PF)". */
   asm ("movl %%cr2, %0" : "=r" (cr2));
+  
 
   printf ("Interrupt %#04x (%s) at eip=%p\n",
           f->vec_no, intr_names[f->vec_no], f->eip);
